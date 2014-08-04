@@ -2,8 +2,8 @@
  *  mp3gain.c - analyzes mp3 files, determines the perceived volume, 
  *      and adjusts the volume of the mp3 accordingly
  *
- *  Copyright (C) 2001-2004 Glen Sawyer
- *  AAC support (C) 2004-2005 David Lasker, Altos Design, Inc.
+ *  Copyright (C) 2001-2009 Glen Sawyer
+ *  AAC support (C) 2004-2009 David Lasker, Altos Design, Inc.
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -49,6 +49,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "apetag.h"
+#include "id3tag.h"
 #ifdef AACGAIN
 #include "aacgain.h"
 #endif
@@ -107,6 +108,12 @@
 #define AMP_RECALC 2
 #define MIN_MAX_GAIN_RECALC 4
 
+#ifdef AACGAIN
+#define AACGAIN_ARG(x)  , x
+#else
+#define AACGAIN_ARG(x)
+#endif
+
 typedef struct {
 	unsigned long fileposition;
 	unsigned char val[2];
@@ -137,6 +144,7 @@ int skipTag = 0;
 int deleteTag = 0;
 int forceRecalculateTag = 0;
 int checkTagOnly = 0;
+static int useId3 = 0;
 
 int gSuccess;
 
@@ -575,7 +583,7 @@ unsigned long reportPercentWritten(unsigned long percent, unsigned long bytes)
     int ok = 1;
 
 #ifndef asWIN32DLL
-    fprintf(stderr,"                                                \r %2d%% of %u bytes written\r"
+    fprintf(stderr,"                                                \r %2lu%% of %lu bytes written\r"
         ,percent,bytes);
     fflush(stderr);
 #else
@@ -599,7 +607,7 @@ unsigned long reportPercentAnalyzed(unsigned long percent, unsigned long bytes)
     if (totFiles-1)	/* if 1 file then don't show [x/n] */
 	    sprintf(fileDivFiles,"[%d/%d]",numFiles,totFiles);
 
-	fprintf(stderr,"                                           \r%s %2d%% of %u bytes analyzed\r"
+	fprintf(stderr,"                                           \r%s %2lu%% of %lu bytes analyzed\r"
 		,fileDivFiles,percent,bytes);
 	fflush(stderr);
     return 1;
@@ -674,11 +682,7 @@ void scanFrameGain() {
 #ifndef asWIN32DLL
 static
 #endif
-#ifdef AACGAIN
-int changeGain(char *filename, AACGainHandle aacH, int leftgainchange, int rightgainchange) {
-#else
-int changeGain(char *filename, int leftgainchange, int rightgainchange) {
-#endif
+int changeGain(char *filename AACGAIN_ARG(AACGainHandle aacH), int leftgainchange, int rightgainchange) {
   unsigned long ok;
   int mode;
   int crcflag;
@@ -841,7 +845,7 @@ int changeGain(char *filename, int leftgainchange, int rightgainchange) {
 			if (singlechannel) {
 				if ((curframe[3] >> 6) & 0x01) { /* if mode is NOT stereo or dual channel */
 					passError( MP3GAIN_FILEFORMAT_NOTSUPPORTED, 2,
-                        filename, ": Can't adjust single channel for mono or joint stereo");
+                        filename, ": Can't adjust single channel for mono or joint stereo\n");
 					ok = 0;
 				}
 			}
@@ -1099,21 +1103,35 @@ void WriteAacGainTags (AACGainHandle aacH, struct MP3GainTagInfo *info) {
     if (info->haveUndo)
         aac_set_tag_int_2(aacH, replaygain_undo, info->undoLeft, info->undoRight);
 }
-
-void changeGainAndTag(char *filename, AACGainHandle aacH, int leftgainchange, int rightgainchange, struct MP3GainTagInfo *tag, struct FileTagsStruct *fileTag) {
-#else
-void changeGainAndTag(char *filename, int leftgainchange, int rightgainchange, struct MP3GainTagInfo *tag, struct FileTagsStruct *fileTag) {
 #endif
+
+
+static
+void WriteMP3GainTag(char *filename AACGAIN_ARG(AACGainHandle aacH), struct MP3GainTagInfo *info, struct FileTagsStruct *fileTags, int saveTimeStamp)
+{
+#ifdef AACGAIN
+	if (aacH) {
+		WriteAacGainTags(aacH, info);
+	} else
+#endif
+	if (useId3) {
+		/* Write ID3 tag; remove stale APE tag if it exists. */
+		if (WriteMP3GainID3Tag(filename, info, saveTimeStamp) >= 0)
+			RemoveMP3GainAPETag(filename, saveTimeStamp);
+	} else {
+		/* Write APE tag */
+		WriteMP3GainAPETag(filename, info, fileTags, saveTimeStamp);
+	}
+}
+
+
+void changeGainAndTag(char *filename AACGAIN_ARG(AACGainHandle aacH), int leftgainchange, int rightgainchange, struct MP3GainTagInfo *tag, struct FileTagsStruct *fileTag) {
 	double dblGainChange;
 	int curMin;
 	int curMax;
 
 	if (leftgainchange != 0 || rightgainchange != 0) {
-#ifdef AACGAIN
-		if (!changeGain(filename,aacH,leftgainchange,rightgainchange)) {
-#else
-		if (!changeGain(filename,leftgainchange,rightgainchange)) {
-#endif
+		if (!changeGain(filename AACGAIN_ARG(aacH), leftgainchange, rightgainchange)) {
 			if (!tag->haveUndo) {
 				tag->undoLeft = 0;
 				tag->undoRight = 0;
@@ -1176,12 +1194,7 @@ void changeGainAndTag(char *filename, int leftgainchange, int rightgainchange, s
 					}
 				}
 			} // if (leftgainchange == rightgainchange ...
-#ifdef AACGAIN
-            if (aacH)
-                WriteAacGainTags(aacH, tag);
-            else
-#endif
-    			WriteMP3GainAPETag(filename, tag, fileTag, saveTime);
+			WriteMP3GainTag(filename AACGAIN_ARG(aacH), tag, fileTag, saveTime);
 		} // if (!changeGain(filename ...
 	}// if (leftgainchange !=0 ...
 
@@ -1265,9 +1278,9 @@ void wrapExplanation() {
 static
 void errUsage(char *progname) {
 	showVersion(progname);
-	fprintf(stderr,"copyright(c) 2001-2004 by Glen Sawyer\n");
+	fprintf(stderr,"copyright(c) 2001-2009 by Glen Sawyer\n");
 #ifdef AACGAIN
-	fprintf(stderr,"AAC support copyright(c) 2004 David Lasker, Altos Design, Inc.\n");
+	fprintf(stderr,"AAC support copyright(c) 2004-2009 David Lasker, Altos Design, Inc.\n");
 #endif
 	fprintf(stderr,"uses mpglib, which can be found at http://www.mpg123.de\n");
 #ifdef AACGAIN
@@ -1286,9 +1299,9 @@ void errUsage(char *progname) {
 static
 void fullUsage(char *progname) {
 		showVersion(progname);
-		fprintf(stderr,"copyright(c) 2001-2004 by Glen Sawyer\n");
+		fprintf(stderr,"copyright(c) 2001-2009 by Glen Sawyer\n");
 #ifdef AACGAIN
-	    fprintf(stderr,"AAC support copyright(c) 2004 David Lasker, Altos Design, Inc.\n");
+	    fprintf(stderr,"AAC support copyright(c) 2004-2009 David Lasker, Altos Design, Inc.\n");
 #endif
 		fprintf(stderr,"uses mpglib, which can be found at http://www.mpg123.de\n");
 #ifdef AACGAIN
@@ -1303,6 +1316,7 @@ void fullUsage(char *progname) {
 		fprintf(stderr,"\t          without doing any analysis (ONLY works for STEREO files,\n");
 		fprintf(stderr,"\t          not Joint Stereo)\n");
 		fprintf(stderr,"\t%cl 1 <i> - apply gain i to channel 1 (right channel)\n",SWITCH_CHAR);
+		fprintf(stderr,"\t%ce - skip Album analysis, even if multiple files listed\n",SWITCH_CHAR);
 		fprintf(stderr,"\t%cr - apply Track gain automatically (all files set to equal loudness)\n",SWITCH_CHAR);
 		fprintf(stderr,"\t%ck - automatically lower Track/Album gain to not clip audio\n",SWITCH_CHAR);
 		fprintf(stderr,"\t%ca - apply Album gain automatically (files are all from the same\n",SWITCH_CHAR);
@@ -1331,6 +1345,8 @@ void fullUsage(char *progname) {
 		fprintf(stderr,"\t%cs d - delete stored tag info (no other processing)\n",SWITCH_CHAR);
 		fprintf(stderr,"\t%cs s - skip (ignore) stored tag info (do not read or write tags)\n",SWITCH_CHAR);
 		fprintf(stderr,"\t%cs r - force re-calculation (do not read tag info)\n",SWITCH_CHAR);
+		fprintf(stderr,"\t%cs i - use ID3v2 tag for MP3 gain info\n",SWITCH_CHAR);
+		fprintf(stderr,"\t%cs a - use APE tag for MP3 gain info (default)\n",SWITCH_CHAR);
 		fprintf(stderr,"\t%cu - undo changes made (based on stored tag info)\n",SWITCH_CHAR);
         fprintf(stderr,"\t%cw - \"wrap\" gain change if gain+change > 255 or gain+change < 0\n",SWITCH_CHAR);
 #ifdef AACGAIN
@@ -1420,6 +1436,7 @@ int main(int argc, char **argv) {
 	int autoClip = 0;
 	int applyTrack = 0;
 	int applyAlbum = 0;
+	int analysisTrack = 0;
 	char analysisError = 0;
 	int fileStart;
 	int databaseFormat = 0;
@@ -1643,6 +1660,14 @@ int main(int argc, char **argv) {
                         case 'R':
                             forceRecalculateTag = !0;
                             break;
+						case 'i':
+						case 'I':
+							useId3 = 1;
+							break;
+						case 'a':
+						case 'A':
+							useId3 = 0;
+							break;
 						default:
 							errUsage(argv[0]);
                     }
@@ -1676,11 +1701,17 @@ int main(int argc, char **argv) {
 					maxAmpOnly = !0;
 					break;
 
+				case 'e':
+				case 'E':
+					analysisTrack = !0;
+					break;
+
 				default:
 					fprintf(stderr,"I don't recognize option %s\n",argv[i]);
 			}
 		}
 	}
+
 	/* now stored in tagInfo---  maxsample = malloc(sizeof(Float_t) * argc); */
 	fileok = (int *)malloc(sizeof(int) * argc);
     /* now stored in tagInfo---  maxgain = malloc(sizeof(unsigned char) * argc); */
@@ -1743,7 +1774,18 @@ int main(int argc, char **argv) {
           }
           else
 #endif
-    		  ReadMP3GainAPETag(curfilename,&(tagInfo[mainloop]),&(fileTags[mainloop]));
+		{
+			ReadMP3GainAPETag(curfilename,&(tagInfo[mainloop]),&(fileTags[mainloop]));
+			if (useId3) {
+				if (tagInfo[mainloop].haveTrackGain || tagInfo[mainloop].haveAlbumGain ||
+				    tagInfo[mainloop].haveMinMaxGain || tagInfo[mainloop].haveAlbumMinMaxGain ||
+				    tagInfo[mainloop].haveUndo) {
+					/* Mark the file dirty to force upgrade to ID3v2 */
+					tagInfo[mainloop].dirty = 1;
+				}
+				ReadMP3GainID3Tag(curfilename,&(tagInfo[mainloop]));
+			}
+		}
           /*fprintf(stdout,"Read previous tags from %s\n",curfilename);
             dumpTaginfo(&(tagInfo[mainloop]));*/
 		  if (forceRecalculateTag) {
@@ -1793,7 +1835,7 @@ int main(int argc, char **argv) {
 		}
 		for (mainloop = fileStart; mainloop < argc; mainloop++) {
 			if (!maxAmpOnly) { /* we don't care about these things if we're only looking for max amp */
-				if (argc - fileStart > 1 && !applyTrack) { /* only check album stuff if more than one file in the list */
+				if (argc - fileStart > 1 && !applyTrack && !analysisTrack) { /* only check album stuff if more than one file in the list */
 					if (!tagInfo[mainloop].haveAlbumGain) {
 						albumRecalc |= FULL_RECALC;
 					} else if (tagInfo[mainloop].albumGain != curAlbumGain) {
@@ -1804,7 +1846,7 @@ int main(int argc, char **argv) {
 					tagInfo[mainloop].recalc |= FULL_RECALC;
 				}
 			}
-			if (argc - fileStart > 1 && !applyTrack) { /* only check album stuff if more than one file in the list */
+			if (argc - fileStart > 1 && !applyTrack && !analysisTrack) { /* only check album stuff if more than one file in the list */
 				if (!tagInfo[mainloop].haveAlbumPeak) {
 					albumRecalc |= AMP_RECALC;
 				} else if (tagInfo[mainloop].albumPeak != curAlbumPeak) {
@@ -1937,14 +1979,9 @@ int main(int argc, char **argv) {
 				if (databaseFormat)
 					fprintf(stdout,"%s\t%d\t%d\n", argv[mainloop], tagInfo[mainloop].undoLeft, tagInfo[mainloop].undoRight);
 
-#ifdef AACGAIN
-				changeGainAndTag(argv[mainloop], aacH,
-                        tagInfo[mainloop].undoLeft, tagInfo[mainloop].undoRight,
-#else
-				changeGainAndTag(argv[mainloop],
-                        tagInfo[mainloop].undoLeft, tagInfo[mainloop].undoRight,
-#endif
-						tagInfo + mainloop, fileTags + mainloop);
+				changeGainAndTag(argv[mainloop] AACGAIN_ARG(aacH),
+				    tagInfo[mainloop].undoLeft, tagInfo[mainloop].undoRight,
+				    tagInfo + mainloop, fileTags + mainloop);
 
 		  } else {
 				if (databaseFormat) {
@@ -1963,34 +2000,16 @@ int main(int argc, char **argv) {
 			  fprintf(stderr,"Applying gain change of %d to CHANNEL %d of %s...\n",directGainVal,whichChannel,argv[mainloop]);
 		  if (whichChannel) { /* do right channel */
 			  if (skipTag) {
-#ifdef AACGAIN
-				  changeGain(argv[mainloop],aacH,0,directGainVal);
-#else
-				  changeGain(argv[mainloop],0,directGainVal);
-#endif
+				  changeGain(argv[mainloop] AACGAIN_ARG(aacH), 0, directGainVal);
 			  } else {
-#ifdef AACGAIN
-				  changeGainAndTag(argv[mainloop],aacH,
-#else
-				  changeGainAndTag(argv[mainloop],
-#endif
-                      0,directGainVal, tagInfo + mainloop, fileTags + mainloop);
+				  changeGainAndTag(argv[mainloop] AACGAIN_ARG(aacH), 0, directGainVal, tagInfo + mainloop, fileTags + mainloop);
 			  }
 		  }
 		  else { /* do left channel */
 			  if (skipTag) {
-#ifdef AACGAIN
-				  changeGain(argv[mainloop],aacH,directGainVal,0);
-#else
-				  changeGain(argv[mainloop],directGainVal,0);
-#endif
+				  changeGain(argv[mainloop] AACGAIN_ARG(aacH), directGainVal, 0);
 			  } else {
-#ifdef AACGAIN
-				changeGainAndTag(argv[mainloop],aacH,
-#else
-				changeGainAndTag(argv[mainloop],
-#endif
-                    directGainVal,0, tagInfo + mainloop, fileTags + mainloop);
+				changeGainAndTag(argv[mainloop] AACGAIN_ARG(aacH), directGainVal, 0, tagInfo + mainloop, fileTags + mainloop);
 			  }
 		  }
 		  if ((!QuietMode) && (gSuccess == 1))
@@ -2000,17 +2019,9 @@ int main(int argc, char **argv) {
 		  if (!QuietMode)
 			  fprintf(stderr,"Applying gain change of %d to %s...\n",directGainVal,argv[mainloop]);
 		  if (skipTag) {
-#ifdef AACGAIN
-			  changeGain(argv[mainloop],aacH,directGainVal,directGainVal);
-#else
-			  changeGain(argv[mainloop],directGainVal,directGainVal);
-#endif
+			  changeGain(argv[mainloop] AACGAIN_ARG(aacH), directGainVal, directGainVal);
 		  } else {
-#ifdef AACGAIN
-			  changeGainAndTag(argv[mainloop],aacH,
-#else
-			  changeGainAndTag(argv[mainloop],
-#endif
+			  changeGainAndTag(argv[mainloop] AACGAIN_ARG(aacH),
                   directGainVal,directGainVal, tagInfo + mainloop, fileTags + mainloop);
 		  }
 		  if ((!QuietMode) && (gSuccess == 1))
@@ -2022,7 +2033,16 @@ int main(int argc, char **argv) {
               aac_clear_rg_tags(aacH);
           else
 #endif
+          {
               RemoveMP3GainAPETag(argv[mainloop], saveTime);
+              if (useId3) {
+                  RemoveMP3GainID3Tag(argv[mainloop], saveTime);
+              }
+          }
+          if ((!QuietMode)&&(!databaseFormat))
+              fprintf(stderr,"Deleting tag info of %s...\n", argv[mainloop]);
+          if (databaseFormat)
+              fprintf(stdout,"%s\tNA\tNA\tNA\tNA\tNA\n", argv[mainloop]);
       }
 	  else {
 		  if (!databaseFormat)
@@ -2370,12 +2390,7 @@ int main(int argc, char **argv) {
 								fprintf(stdout,"No changes to %s are necessary\n",argv[mainloop]);
 								if (!skipTag && tagInfo[mainloop].dirty) {
 									fprintf(stdout,"...but tag needs update: Writing tag information for %s\n",argv[mainloop]);
-#ifdef AACGAIN
-                                    if (aacInfo[mainloop])
-                                        WriteAacGainTags(aacInfo[mainloop], tagInfo + mainloop);
-                                    else
-#endif
-									    WriteMP3GainAPETag(argv[mainloop],tagInfo + mainloop, fileTags + mainloop, saveTime);
+									WriteMP3GainTag(argv[mainloop] AACGAIN_ARG(aacInfo[mainloop]), tagInfo + mainloop, fileTags + mainloop, saveTime);
 								}
 							}
 							else {
@@ -2397,27 +2412,14 @@ int main(int argc, char **argv) {
                                 if (goAhead) {
 									fprintf(stdout,"Applying mp3 gain change of %d to %s...\n",intGainChange,argv[mainloop]);
                                     if (skipTag) {
-#ifdef AACGAIN
-	                                    changeGain(argv[mainloop],aacH,intGainChange,intGainChange);
-#else
-	                                    changeGain(argv[mainloop],intGainChange,intGainChange);
-#endif
+	                                    changeGain(argv[mainloop] AACGAIN_ARG(aacH), intGainChange, intGainChange);
                                     } else {
-#ifdef AACGAIN
-	                                    changeGainAndTag(argv[mainloop],aacH,
-#else
-	                                    changeGainAndTag(argv[mainloop],
-#endif
+	                                    changeGainAndTag(argv[mainloop] AACGAIN_ARG(aacH),
                                             intGainChange,intGainChange, tagInfo + mainloop, fileTags + mainloop);
                                     }
                                 } else if (!skipTag && tagInfo[mainloop].dirty) {
 									fprintf(stdout,"Writing tag information for %s\n",argv[mainloop]);
-#ifdef AACGAIN
-                                    if (aacH)
-                                        WriteAacGainTags(aacH, tagInfo + mainloop);
-                                    else
-#endif
-    									WriteMP3GainAPETag(argv[mainloop],tagInfo + mainloop, fileTags + mainloop, saveTime);
+    								WriteMP3GainTag(argv[mainloop] AACGAIN_ARG(aacH), tagInfo + mainloop, fileTags + mainloop, saveTime);
 								}
 							}
 						}
@@ -2438,7 +2440,7 @@ int main(int argc, char **argv) {
 	  }
 	}
 
-	if ((numFiles > 0)&&(!applyTrack)) {
+	if ((numFiles > 0)&&(!applyTrack)&&(!analysisTrack)) {
 		if (albumRecalc & FULL_RECALC) {
 			if (maxAmpOnly)
 				dBchange = 0;
@@ -2554,12 +2556,7 @@ int main(int argc, char **argv) {
 							fprintf(stdout,"\nNo changes to %s are necessary\n",argv[mainloop]);
 							if (!skipTag && tagInfo[mainloop].dirty) {
 								fprintf(stdout,"...but tag needs update: Writing tag information for %s\n",argv[mainloop]);
-#ifdef AACGAIN
-                                if (aacInfo[mainloop])
-                                    WriteAacGainTags(aacInfo[mainloop], tagInfo + mainloop);
-                                else
-#endif
-    								WriteMP3GainAPETag(argv[mainloop],tagInfo + mainloop, fileTags + mainloop, saveTime);
+    							WriteMP3GainTag(argv[mainloop] AACGAIN_ARG(aacInfo[mainloop]), tagInfo + mainloop, fileTags + mainloop, saveTime);
 							}
 						}
 						else {
@@ -2570,26 +2567,13 @@ int main(int argc, char **argv) {
 							if (goAhead) {
 								fprintf(stdout,"Applying mp3 gain change of %d to %s...\n",intGainChange,argv[mainloop]);
 								if (skipTag) {
-#ifdef AACGAIN
-									changeGain(argv[mainloop],aacInfo[mainloop],intGainChange,intGainChange);
-#else
-									changeGain(argv[mainloop],intGainChange,intGainChange);
-#endif
+									changeGain(argv[mainloop] AACGAIN_ARG(aacInfo[mainloop]), intGainChange, intGainChange);
 								} else {
-#ifdef AACGAIN
-									changeGainAndTag(argv[mainloop],aacInfo[mainloop],intGainChange,intGainChange, tagInfo + mainloop, fileTags + mainloop);
-#else
-									changeGainAndTag(argv[mainloop],intGainChange,intGainChange, tagInfo + mainloop, fileTags + mainloop);
-#endif
+									changeGainAndTag(argv[mainloop] AACGAIN_ARG(aacInfo[mainloop]), intGainChange, intGainChange, tagInfo + mainloop, fileTags + mainloop);
 								}
 							} else if (!skipTag && tagInfo[mainloop].dirty) {
 								fprintf(stdout,"Writing tag information for %s\n",argv[mainloop]);
-#ifdef AACGAIN
-                                if (aacInfo[mainloop])
-                                    WriteAacGainTags(aacInfo[mainloop], tagInfo + mainloop);
-                                else
-#endif
-    								WriteMP3GainAPETag(argv[mainloop],tagInfo + mainloop, fileTags + mainloop, saveTime);
+    							WriteMP3GainTag(argv[mainloop] AACGAIN_ARG(aacInfo[mainloop]), tagInfo + mainloop, fileTags + mainloop, saveTime);
 							}
 						}
 					}
@@ -2610,12 +2594,7 @@ int main(int argc, char **argv) {
 		for (mainloop = fileStart; mainloop < argc; mainloop++) {
 			if (fileok[mainloop]) {
 				if (tagInfo[mainloop].dirty) {
-#ifdef AACGAIN
-                    if (aacInfo[mainloop])
-                        WriteAacGainTags(aacInfo[mainloop], tagInfo + mainloop);
-                    else
-#endif
-                        WriteMP3GainAPETag(argv[mainloop],tagInfo + mainloop, fileTags + mainloop, saveTime);
+					WriteMP3GainTag(argv[mainloop] AACGAIN_ARG(aacInfo[mainloop]), tagInfo + mainloop, fileTags + mainloop, saveTime);
 				}
 			}
 		}
