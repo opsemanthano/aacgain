@@ -1,0 +1,23 @@
+December 23, 2003
+
+Here's a list of things that the authors are working on in the short-term:
+
+* mp4live:
+	nothing for the moment
+
+* mp4player:
+        nothing for the moment
+
+Here's a list of things that we would like to do in the future,
+however we're happy to have volunteers do them also ;-)
+
+* Support for DV in mp4live
+* rewrite player to use timescales for synchronization
+* Update ISO MPEG-4 reference codec to latest version
+* RTP insertion/failover intermediary
+* RSVP support
+* Port, port, port...
+
+Further suggestions are of course welcome, 
+especially if you're willing to implement them!
+

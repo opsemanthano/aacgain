@@ -1,0 +1,51 @@
+*****************************************
+* AACGAIN by David Lasker               *
+* Linux build system by Prakash Punnoor *
+*****************************************
+
+This document describes how to build AACGAIN on a Linux system.
+Please also read aacgain's original README.
+
+As I am a noob concerning automake and stuff, please don't bash me if this build system
+doesn't work properly. You can contact me (prakashpub at arcor dot de) if you have
+concrete suggestions to enhance it.
+
+
+=- Quick Steps -=
+
+All paths are relative to the linux dir, where the prepare.sh script resides.
+
+1) Extract needed code into the following dirs (paths are relative to this linux dir):
+   ../aacgain
+   ../mp3gain
+   ../faad2* (from cvs September 2004 or later, don't use standard distribution <- important!)
+   ../mpeg4ip*
+
+In the end you should have following structure:
+
+- linux
+- mp3gain
+- aacgain
+- faad2*
+- mpeg4ip*
+
+2) Apply ../aacgain/mpeg4ip12.patch if necessary (refer to aacgain's README).
+
+3) Run prepare.sh. This will create symlinks to the latest created
+   fadd2* and mpeg4ip* directories. Use "touch" to get the correct directories
+   selected.
+
+4) Run mkdir build && cd build && ../configure --enable-static-build && make
+   If you have faad2 and mp4v2 already installed, you may drop
+   the --enable-static-build parameter to save compile time and binary size
+
+5) I haven't tried "make install" on my system, so I cannor predict its behaviour.
+   You can find the generated binary in build/aacgain/aacgain.
+   Once compilation is finished you can reduce its size by running strip -s on it.
+   
+   I haven't thouroughly tested the generated binary, so take care.
+   Tested on gentoo system with gcc-4 snapshot from 02.04.2004.
+   
+   Have fun!
+   
+   Prakash

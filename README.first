@@ -1,0 +1,14 @@
+### AACGAIN by David Lasker
+### Packaged by Miguel Angel (maacruz at gmail dot com)
+
+Building aacgain in linux used to be quite a complex task (see README), involving downloading several different sources, making a source tree by hand and running scripts.
+So I decided to do it for you and put it all together in a tarball which could be compiled the traditional way (configure&make&make install). I have included a .spec file too for rpm based distributions.
+
+This package contains the following sources:
+mp3gain-1.4.7 CVS 04/11/2008 (http://sourceforge.net/projects/mp3gain/)
+aacgain-1.8 CVS 04/11/2008 (http://sourceforge.net/projects/mp3gain/)
+mp4v2 library from mpeg4ip-1.6.1 CVS (http://mpeg4ip.sourceforge.net/)
+libfaad library from faad2 15/09/04 CVS source (http://www.audiocoding.com/downloads.html)
+
+The build system has been derived from Prakash Punnoor's one included in aacgain package.
+
