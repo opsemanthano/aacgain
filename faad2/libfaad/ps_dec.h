@@ -1,6 +1,6 @@
 /*
 ** FAAD2 - Freeware Advanced Audio (AAC) Decoder including SBR decoding
-** Copyright (C) 2003-2004 M. Bakker, Ahead Software AG, http://www.nero.com
+** Copyright (C) 2003-2005 M. Bakker, Nero AG, http://www.nero.com
 **  
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -19,10 +19,13 @@
 ** Any non-GPL usage of this software or parts of this software is strictly
 ** forbidden.
 **
-** Commercial non-GPL licensing of this software is possible.
-** For more info contact Ahead Software through Mpeg4AAClicense@nero.com.
+** The "appropriate copyright message" mentioned in section 2c of the GPLv2
+** must read: "Code from FAAD2 is copyright (c) Nero AG, www.nero.com"
 **
-** $Id: ps_dec.h,v 1.8 2004/09/04 14:56:28 menno Exp $
+** Commercial non-GPL licensing of this software is possible.
+** For more info contact Nero AG through Mpeg4AAClicense@nero.com.
+**
+** $Id: ps_dec.h,v 1.13 2009/01/26 22:32:31 menno Exp $
 **/
 
 #ifndef __PS_DEC_H__
@@ -89,6 +92,7 @@ typedef struct
     /* hybrid filterbank parameters */
     void *hyb;
     uint8_t use34hybrid_bands;
+    uint8_t numTimeSlotsRate;
 
     /**/
     uint8_t num_groups;
@@ -135,7 +139,7 @@ typedef struct
 uint16_t ps_data(ps_info *ps, bitfile *ld, uint8_t *header);
 
 /* ps_dec.c */
-ps_info *ps_init(uint8_t sr_index);
+ps_info *ps_init(uint8_t sr_index, uint8_t numTimeSlotsRate);
 void ps_free(ps_info *ps);
 
 uint8_t ps_decode(ps_info *ps, qmf_t X_left[38][64], qmf_t X_right[38][64]);

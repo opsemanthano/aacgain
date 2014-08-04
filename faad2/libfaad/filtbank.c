@@ -1,6 +1,6 @@
 /*
 ** FAAD2 - Freeware Advanced Audio (AAC) Decoder including SBR decoding
-** Copyright (C) 2003-2004 M. Bakker, Ahead Software AG, http://www.nero.com
+** Copyright (C) 2003-2005 M. Bakker, Nero AG, http://www.nero.com
 **  
 ** This program is free software; you can redistribute it and/or modify
 ** it under the terms of the GNU General Public License as published by
@@ -19,10 +19,13 @@
 ** Any non-GPL usage of this software or parts of this software is strictly
 ** forbidden.
 **
-** Commercial non-GPL licensing of this software is possible.
-** For more info contact Ahead Software through Mpeg4AAClicense@nero.com.
+** The "appropriate copyright message" mentioned in section 2c of the GPLv2
+** must read: "Code from FAAD2 is copyright (c) Nero AG, www.nero.com"
 **
-** $Id: filtbank.c,v 1.41 2004/09/08 09:43:11 gcp Exp $
+** Commercial non-GPL licensing of this software is possible.
+** For more info contact Nero AG through Mpeg4AAClicense@nero.com.
+**
+** $Id: filtbank.c,v 1.46 2009/01/26 23:51:15 menno Exp $
 **/
 
 #include "common.h"
@@ -37,7 +40,6 @@
 #endif
 
 #include "filtbank.h"
-#include "decoder.h"
 #include "syntax.h"
 #include "kbd_win.h"
 #include "sine_win.h"
